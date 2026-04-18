@@ -1,0 +1,39 @@
+{
+  "name": "backiot_sensores",
+  "version": "1.0.0",
+  "description": "Backend para monitoreo IoT con Express, Socket.IO y Neon PostgreSQL",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DilanMamani/BackIOT_Sensores.git"
+  },
+  "keywords": [
+    "iot",
+    "express",
+    "socket.io",
+    "postgres",
+    "neon",
+    "esp32"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DilanMamani/BackIOT_Sensores/issues"
+  },
+  "homepage": "https://github.com/DilanMamani/BackIOT_Sensores#readme",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "pg": "^8.16.3",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
