@@ -12,6 +12,8 @@ const locationsRoutes = require("./routes/locations.routes");
 
 const notFoundMiddleware = require("./middlewares/notFound.middleware");
 const errorMiddleware = require("./middlewares/error.middleware");
+const authRoutes = require("./routes/auth.routes");
+const usersRoutes = require("./routes/users.routes");
 
 const app = express();
 
@@ -39,7 +41,8 @@ app.use("/api/iot", iotRoutes);
 app.use("/api/alerts", alertsRoutes);
 app.use("/api/devices", devicesRoutes);
 app.use("/api/locations", locationsRoutes);
-
+app.use("/api/auth", authRoutes);
+app.use("/api/users", usersRoutes);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
