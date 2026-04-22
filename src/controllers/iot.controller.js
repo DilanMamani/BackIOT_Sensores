@@ -11,19 +11,18 @@ const postSample = async (req, res) => {
       null;
 
     const result = await createSample(req.body, sourceIp);
-    const snapshot = await getSnapshotByDeviceCode(result.deviceCode);
 
     console.log("Nueva muestra guardada:", result);
     console.log("Emitir snapshot:update para:", result.deviceCode);
 
     const io = getIO();
-    io.emit("snapshot:update", snapshot);
+    io.emit("snapshot:update", result.snapshot);
 
     return created(
       res,
       {
         result,
-        snapshot,
+        snapshot: result.snapshot,
       },
       "Muestra recibida y guardada correctamente"
     );

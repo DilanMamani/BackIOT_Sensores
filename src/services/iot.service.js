@@ -38,119 +38,147 @@ const createSample = async (payload, sourceIp = null) => {
   try {
     await client.query("BEGIN");
 
-    const { deviceCode, sampledAt, metrics } = payload;
+    const { deviceCode, metrics } = payload;
 
     if (!deviceCode || !metrics || typeof metrics !== "object") {
-      throw new Error("Payload inválido. Se requiere deviceCode y metrics.");
+      throw new Error("Payload inválido");
     }
 
-    const sampledAtFinal = sampledAt || new Date().toISOString();
+    const sampledAt = new Date().toISOString();
 
-    const deviceResult = await client.query(
-      `
-      select id, code
-      from devices
-      where code = $1
-      limit 1
-      `,
+    // 1. Obtener device
+    const deviceRes = await client.query(
+      `select id, code from devices where code = $1 limit 1`,
       [deviceCode]
     );
 
-    const device = deviceResult.rows[0];
+    const device = deviceRes.rows[0];
+    if (!device) throw new Error("Dispositivo no encontrado");
 
-    if (!device) {
-      throw new Error("Dispositivo no encontrado");
-    }
-
-    const batchPayload = {
-      ...payload,
-      sampledAt: sampledAtFinal,
-    };
-
-    const batchResult = await client.query(
-      `
-      insert into reading_batches (device_id, source_ip, transport, payload)
-      values ($1, $2, 'http', $3::jsonb)
-      returning id
-      `,
-      [device.id, sourceIp, JSON.stringify(batchPayload)]
+    // 2. Guardar batch
+    const batchRes = await client.query(
+      `insert into reading_batches (device_id, source_ip, transport, payload)
+       values ($1, $2, 'http', $3::jsonb)
+       returning id`,
+      [device.id, sourceIp, JSON.stringify({ ...payload, sampledAt })]
     );
 
-    const batchId = batchResult.rows[0].id;
+    const batchId = batchRes.rows[0].id;
 
+    // 3. Riesgo
     const { riskLevel, riskScore } = calculateRisk(metrics);
 
-    const sampleResult = await client.query(
-      `
-      insert into device_samples (
-        batch_id,
-        device_id,
-        sampled_at,
-        received_at,
-        risk_level,
-        risk_score,
-        metadata
+    // 4. Crear sample
+    const sampleRes = await client.query(
+      `insert into device_samples (
+        batch_id, device_id, sampled_at, received_at,
+        risk_level, risk_score, metadata
       )
       values ($1, $2, $3::timestamptz, now(), $4, $5, '{}'::jsonb)
-      returning id, sampled_at
-      `,
-      [batchId, device.id, sampledAtFinal, riskLevel, riskScore]
+      returning id, sampled_at`,
+      [batchId, device.id, sampledAt, riskLevel, riskScore]
     );
 
-    const sample = sampleResult.rows[0];
+    const sample = sampleRes.rows[0];
+
+    // =========================================
+    // 🔥 OPTIMIZACIÓN: precargar TODO
+    // =========================================
+
+    const metricCodes = Object.keys(metrics);
+
+    // metric_types
+    const metricTypesRes = await client.query(
+      `select id, code from metric_types where code = any($1)`,
+      [metricCodes]
+    );
+
+    const metricTypeMap = {};
+    metricTypesRes.rows.forEach((m) => {
+      metricTypeMap[m.code] = m.id;
+    });
+
+    // device_sensors
+    const deviceSensorsRes = await client.query(
+      `select id, label from device_sensors where device_id = $1`,
+      [device.id]
+    );
+
+    const sensorMap = {};
+    deviceSensorsRes.rows.forEach((s) => {
+      sensorMap[s.label] = s.id;
+    });
+
+    // thresholds
+    const thresholdsRes = await client.query(
+      `select metric_type_id, severity, operator, value_1, value_2
+       from metric_thresholds
+       where is_active = true
+         and (device_id is null or device_id = $1)`,
+      [device.id]
+    );
+
+    const thresholdsMap = {};
+    thresholdsRes.rows.forEach((t) => {
+      if (!thresholdsMap[t.metric_type_id]) {
+        thresholdsMap[t.metric_type_id] = [];
+      }
+      thresholdsMap[t.metric_type_id].push(t);
+    });
+
+    // =========================================
+    // 🔥 BATCH INSERT metrics
+    // =========================================
+
+    const metricValues = [];
+    const alertsToInsert = [];
+
+    let paramIndex = 1;
+    const queryParams = [];
 
     for (const [metricCode, metricValue] of Object.entries(metrics)) {
       const numericValue = Number(metricValue);
+      if (Number.isNaN(numericValue)) continue;
 
-      if (Number.isNaN(numericValue)) {
-        continue;
-      }
+      const metricTypeId = metricTypeMap[metricCode];
+      if (!metricTypeId) continue;
 
-      const metricTypeResult = await client.query(
-        `
-        select id, code
-        from metric_types
-        where code = $1
-        limit 1
-        `,
-        [metricCode]
+      const sensorLabel = METRIC_TO_SENSOR_LABEL[metricCode];
+      const deviceSensorId = sensorMap[sensorLabel] || null;
+
+      const thresholds = thresholdsMap[metricTypeId] || [];
+      const status = evaluateMetricStatus(numericValue, thresholds);
+
+      metricValues.push(`(
+        $${paramIndex++}, $${paramIndex++}, $${paramIndex++},
+        $${paramIndex++}, $${paramIndex++}, $${paramIndex++},
+        'ok', $${paramIndex++}, '{}'::jsonb
+      )`);
+
+      queryParams.push(
+        sample.id,
+        device.id,
+        deviceSensorId,
+        metricTypeId,
+        numericValue,
+        numericValue,
+        status
       );
 
-      const metricType = metricTypeResult.rows[0];
-      if (!metricType) continue;
-
-      const sensorLabel = METRIC_TO_SENSOR_LABEL[metricCode] || null;
-      let deviceSensorId = null;
-
-      if (sensorLabel) {
-        const deviceSensorResult = await client.query(
-          `
-          select id
-          from device_sensors
-          where device_id = $1 and label = $2
-          limit 1
-          `,
-          [device.id, sensorLabel]
-        );
-
-        deviceSensorId = deviceSensorResult.rows[0]?.id || null;
+      // SOLO alertas danger (optimización)
+      if (status === "danger") {
+        alertsToInsert.push({
+          deviceSensorId,
+          metricTypeId,
+          metricCode,
+          value: numericValue,
+        });
       }
+    }
 
-      const thresholdResult = await client.query(
-        `
-        select severity, operator, value_1, value_2, message_template
-        from metric_thresholds
-        where metric_type_id = $1
-          and is_active = true
-          and (device_id is null or device_id = $2)
-        order by case when severity = 'danger' then 1 else 2 end
-        `,
-        [metricType.id, device.id]
-      );
-
-      const status = evaluateMetricStatus(numericValue, thresholdResult.rows);
-
-      const metricInsertResult = await client.query(
+    // INSERT MASIVO
+    if (metricValues.length) {
+      await client.query(
         `
         insert into sample_metrics (
           sample_id,
@@ -163,64 +191,50 @@ const createSample = async (payload, sourceIp = null) => {
           status,
           metadata
         )
-        values ($1, $2, $3, $4, $5, $6, 'ok', $7, '{}'::jsonb)
-        returning id
+        values ${metricValues.join(",")}
         `,
-        [
-          sample.id,
-          device.id,
-          deviceSensorId,
-          metricType.id,
-          numericValue,
-          numericValue,
-          status,
-        ]
+        queryParams
       );
-
-      const sampleMetricId = metricInsertResult.rows[0].id;
-
-      if (status === "warning" || status === "danger") {
-        await client.query(
-          `
-          insert into alerts (
-            device_id,
-            device_sensor_id,
-            sample_id,
-            sample_metric_id,
-            metric_type_id,
-            level,
-            code,
-            title,
-            message,
-            current_value,
-            threshold_value,
-            is_resolved,
-            metadata
-          )
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, null, false, '{}'::jsonb)
-          `,
-          [
-            device.id,
-            deviceSensorId,
-            sample.id,
-            sampleMetricId,
-            metricType.id,
-            status,
-            metricCode,
-            `Alerta en ${metricCode}`,
-            `La métrica ${metricCode} entró en estado ${status}.`,
-            numericValue,
-          ]
-        );
-      }
     }
 
+    // =========================================
+    // 🔥 INSERT ALERTS (solo si hay)
+    // =========================================
+
+    for (const alert of alertsToInsert) {
+      await client.query(
+        `
+        insert into alerts (
+          device_id,
+          device_sensor_id,
+          sample_id,
+          metric_type_id,
+          level,
+          code,
+          title,
+          message,
+          current_value,
+          is_resolved,
+          metadata
+        )
+        values ($1,$2,$3,$4,'danger',$5,$6,$7,$8,false,'{}')
+        `,
+        [
+          device.id,
+          alert.deviceSensorId,
+          sample.id,
+          alert.metricTypeId,
+          alert.metricCode,
+          `Alerta en ${alert.metricCode}`,
+          `Valor crítico detectado`,
+          alert.value,
+        ]
+      );
+    }
+
+    // actualizar last_seen
     await client.query(
-      `
-      update devices
-      set last_seen_at = now()
-      where id = $1
-      `,
+      `update devices set last_seen_at = now() where id = $1`,
       [device.id]
     );
 
@@ -232,6 +246,14 @@ const createSample = async (payload, sourceIp = null) => {
       sampledAt: sample.sampled_at,
       riskLevel,
       riskScore,
+      snapshot: {
+        device_code: device.code,
+        sampled_at: sample.sampled_at,
+        risk_level: riskLevel,
+        risk_score: riskScore,
+        ...metrics
+
+      }
     };
   } catch (error) {
     await client.query("ROLLBACK");
