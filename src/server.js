@@ -1,9 +1,9 @@
 const http = require("http");
 require("dotenv").config();
-
 const app = require("./app");
 const { testDbConnection } = require("./config/db");
 const { initSocket } = require("./sockets/socket");
+const { initTelegramBot }= require("./sockets/telegramBot"); // ← NUEVO
 const { Server } = require("socket.io");
 
 const PORT = process.env.PORT || 3000;
@@ -29,10 +29,13 @@ const startServer = async () => {
       console.log(`Servidor corriendo en http://localhost:${PORT}`);
       console.log("Socket.IO listo");
     });
+ 
+    initTelegramBot();
+ 
   } catch (error) {
     console.error("No se pudo iniciar el servidor:", error.message);
     process.exit(1);
   }
 };
-
+ 
 startServer();
