@@ -16,6 +16,7 @@ const authRoutes = require("./routes/auth.routes");
 const usersRoutes = require("./routes/users.routes");
 const reportsRouter = require('./routes/reports.routes');
 const mapRoutes = require('./routes/map.routes');
+const riskHistoryRoutes = require("./routes/riskHistory.routes");
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 app.use('/api/reports', reportsRouter);
 app.use('/api/map', mapRoutes);
+app.use("/api/risk-history", riskHistoryRoutes);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
