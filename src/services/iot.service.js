@@ -66,7 +66,17 @@ const createSample = async (payload, sourceIp = null) => {
     const batchId = batchRes.rows[0].id;
 
     // 3. Riesgo
-    const { riskLevel, riskScore } = calculateRisk(metrics);
+    const espRiskScore = Number(metrics.riskScore);
+    const espRiskLevel = metrics.riskLevel;
+
+    const validLevels = ["normal", "warning", "danger"];
+    const useEspRisk = !isNaN(espRiskScore) && 
+                      espRiskScore > 0 && 
+                      validLevels.includes(espRiskLevel);
+
+    const { riskLevel, riskScore } = useEspRisk
+      ? { riskLevel: espRiskLevel, riskScore: espRiskScore }
+      : calculateRisk(metrics);
 
     // 4. Crear sample
     const sampleRes = await client.query(
