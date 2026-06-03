@@ -14,6 +14,7 @@ const notFoundMiddleware = require("./middlewares/notFound.middleware");
 const errorMiddleware = require("./middlewares/error.middleware");
 const authRoutes = require("./routes/auth.routes");
 const usersRoutes = require("./routes/users.routes");
+const reportsRouter = require('./routes/reports.routes');
 
 const app = express();
 
@@ -25,7 +26,7 @@ app.use(
 );
 
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+//app.use(express.urlencoded({ extended: true }));
 
 app.get("/", (_req, res) => {
   res.json({
@@ -43,6 +44,7 @@ app.use("/api/devices", devicesRoutes);
 app.use("/api/locations", locationsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
+app.use('/api/reports', reportsRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
