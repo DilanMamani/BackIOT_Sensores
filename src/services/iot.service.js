@@ -1,3 +1,4 @@
+const { emitMapAlertNew, emitMapDeviceSeen } = require('../sockets/mapSocket');
 const { pool } = require("../config/db");
 const { evaluateMetricStatus } = require("./threshold.service");
 const { METRIC_TO_SENSOR_LABEL } = require("../constants/metricSensorMap");
@@ -211,6 +212,7 @@ const createSample = async (payload, sourceIp = null) => {
     // 🔥 INSERT ALERTS (solo si hay)
     // =========================================
 
+    // Emitir eventos del mapa para cada nueva alerta
     for (const alert of alertsToInsert) {
       await client.query(
         `
@@ -249,6 +251,25 @@ const createSample = async (payload, sourceIp = null) => {
     );
 
     await client.query("COMMIT");
+
+    // Notificar al mapa que el dispositivo estuvo activo
+    emitMapDeviceSeen({ device_code: device.code, last_seen_at: new Date().toISOString() });
+
+    // Emitir cada alerta generada al mapa
+    if (alertsToInsert.length > 0) {
+      alertsToInsert.forEach((a) =>
+        emitMapAlertNew({
+          device_code:   device.code,
+          device_name:   device.name,
+          level:         'danger',
+          code:          a.metricCode,
+          title:         `Alerta en ${a.metricCode}`,
+          current_value: a.value,
+          metric_code:   a.metricCode,
+          created_at:    new Date().toISOString(),
+        })
+      );
+    }
 
     return {
       sampleId: sample.id,
