@@ -1,3 +1,5 @@
+const { emitMapAlertNew, emitMapDeviceSeen } = require('../sockets/mapSocket');
+const { notifyAdminsAlert } = require('./telegram.service');
 const { pool } = require("../config/db");
 const { evaluateMetricStatus } = require("./threshold.service");
 const { METRIC_TO_SENSOR_LABEL } = require("../constants/metricSensorMap");
@@ -48,7 +50,7 @@ const createSample = async (payload, sourceIp = null) => {
 
     // 1. Obtener device
     const deviceRes = await client.query(
-      `select id, code from devices where code = $1 limit 1`,
+      `select id, code, name from devices where code = $1 limit 1`,
       [deviceCode]
     );
 
@@ -70,9 +72,9 @@ const createSample = async (payload, sourceIp = null) => {
     const espRiskLevel = metrics.riskLevel;
 
     const validLevels = ["normal", "warning", "danger"];
-    const useEspRisk = !isNaN(espRiskScore) && 
-                      espRiskScore > 0 && 
-                      validLevels.includes(espRiskLevel);
+    const useEspRisk  = !isNaN(espRiskScore) &&
+                        espRiskScore > 0 &&
+                        validLevels.includes(espRiskLevel);
 
     const { riskLevel, riskScore } = useEspRisk
       ? { riskLevel: espRiskLevel, riskScore: espRiskScore }
@@ -91,13 +93,8 @@ const createSample = async (payload, sourceIp = null) => {
 
     const sample = sampleRes.rows[0];
 
-    // =========================================
-    // 🔥 OPTIMIZACIÓN: precargar TODO
-    // =========================================
-
-    const metricCodes = Object.keys(metrics);
-
-    // metric_types
+    // ── Precargar todo ─────────────────────────────────────────────────────
+    const metricCodes    = Object.keys(metrics);
     const metricTypesRes = await client.query(
       `select id, code from metric_types where code = any($1)`,
       [metricCodes]
@@ -130,34 +127,27 @@ const createSample = async (payload, sourceIp = null) => {
 
     const thresholdsMap = {};
     thresholdsRes.rows.forEach((t) => {
-      if (!thresholdsMap[t.metric_type_id]) {
-        thresholdsMap[t.metric_type_id] = [];
-      }
+      if (!thresholdsMap[t.metric_type_id]) thresholdsMap[t.metric_type_id] = [];
       thresholdsMap[t.metric_type_id].push(t);
     });
 
-    // =========================================
-    // 🔥 BATCH INSERT metrics
-    // =========================================
-
-    const metricValues = [];
+    // ── Batch insert metrics ───────────────────────────────────────────────
+    const metricValues  = [];
     const alertsToInsert = [];
-
-    let paramIndex = 1;
-    const queryParams = [];
+    let   paramIndex     = 1;
+    const queryParams    = [];
 
     for (const [metricCode, metricValue] of Object.entries(metrics)) {
       const numericValue = Number(metricValue);
       if (Number.isNaN(numericValue)) continue;
 
-      const metricTypeId = metricTypeMap[metricCode];
+      const metricTypeId  = metricTypeMap[metricCode];
       if (!metricTypeId) continue;
 
-      const sensorLabel = METRIC_TO_SENSOR_LABEL[metricCode];
+      const sensorLabel    = METRIC_TO_SENSOR_LABEL[metricCode];
       const deviceSensorId = sensorMap[sensorLabel] || null;
-
-      const thresholds = thresholdsMap[metricTypeId] || [];
-      const status = evaluateMetricStatus(numericValue, thresholds);
+      const thresholds     = thresholdsMap[metricTypeId] || [];
+      const status         = evaluateMetricStatus(numericValue, thresholds);
 
       metricValues.push(`(
         $${paramIndex++}, $${paramIndex++}, $${paramIndex++},
@@ -166,80 +156,58 @@ const createSample = async (payload, sourceIp = null) => {
       )`);
 
       queryParams.push(
-        sample.id,
-        device.id,
-        deviceSensorId,
-        metricTypeId,
-        numericValue,
-        numericValue,
-        status
+        sample.id, device.id, deviceSensorId,
+        metricTypeId, numericValue, numericValue, status
       );
 
-      // SOLO alertas danger (optimización)
       if (status === "danger") {
-        alertsToInsert.push({
-          deviceSensorId,
-          metricTypeId,
-          metricCode,
-          value: numericValue,
-        });
+        alertsToInsert.push({ deviceSensorId, metricTypeId, metricCode, value: numericValue });
       }
     }
 
-    // INSERT MASIVO
     if (metricValues.length) {
       await client.query(
-        `
-        insert into sample_metrics (
-          sample_id,
-          device_id,
-          device_sensor_id,
-          metric_type_id,
-          numeric_value,
-          raw_numeric_value,
-          quality,
-          status,
-          metadata
-        )
-        values ${metricValues.join(",")}
-        `,
+        `insert into sample_metrics (
+          sample_id, device_id, device_sensor_id, metric_type_id,
+          numeric_value, raw_numeric_value, quality, status, metadata
+        ) values ${metricValues.join(",")}`,
         queryParams
       );
     }
 
-    // =========================================
-    // 🔥 INSERT ALERTS (solo si hay)
-    // =========================================
+    // ── INSERT alerts + notificación Telegram ──────────────────────────────
+    const insertedAlerts = [];
 
     for (const alert of alertsToInsert) {
-      await client.query(
-        `
-        insert into alerts (
-          device_id,
-          device_sensor_id,
-          sample_id,
-          metric_type_id,
-          level,
-          code,
-          title,
-          message,
-          current_value,
-          is_resolved,
-          metadata
+      const alertRes = await client.query(
+        `insert into alerts (
+          device_id, device_sensor_id, sample_id, metric_type_id,
+          level, code, title, message, current_value, is_resolved, metadata
         )
         values ($1,$2,$3,$4,'danger',$5,$6,$7,$8,false,'{}')
-        `,
+        returning id`,
         [
-          device.id,
-          alert.deviceSensorId,
-          sample.id,
-          alert.metricTypeId,
+          device.id, alert.deviceSensorId, sample.id, alert.metricTypeId,
           alert.metricCode,
           `Alerta en ${alert.metricCode}`,
           `Valor crítico detectado`,
           alert.value,
         ]
       );
+
+      insertedAlerts.push({
+        id:            alertRes.rows[0]?.id,
+        device_id:     device.id,
+        device_code:   device.code,
+        device_name:   device.name,
+        level:         'danger',
+        code:          alert.metricCode,
+        metric_code:   alert.metricCode,
+        title:         `Alerta en ${alert.metricCode}`,
+        message:       'Valor crítico detectado',
+        current_value: alert.value,
+        created_at:    new Date().toISOString(),
+      });
     }
 
     // actualizar last_seen
@@ -250,20 +218,32 @@ const createSample = async (payload, sourceIp = null) => {
 
     await client.query("COMMIT");
 
+    // ── Post-commit: WebSocket + Telegram ─────────────────────────────────
+    emitMapDeviceSeen({ device_code: device.code, last_seen_at: new Date().toISOString() });
+
+    for (const a of insertedAlerts) {
+      // WebSocket al mapa
+      emitMapAlertNew(a);
+
+      // Telegram a todos los admins (no bloqueante)
+      notifyAdminsAlert(a).catch(e =>
+        console.error('[iot.service] Error notificando Telegram:', e.message)
+      );
+    }
+
     return {
-      sampleId: sample.id,
+      sampleId:   sample.id,
       deviceCode: device.code,
-      sampledAt: sample.sampled_at,
+      sampledAt:  sample.sampled_at,
       riskLevel,
       riskScore,
       snapshot: {
         device_code: device.code,
-        sampled_at: sample.sampled_at,
-        risk_level: riskLevel,
-        risk_score: riskScore,
-        ...metrics
-
-      }
+        sampled_at:  sample.sampled_at,
+        risk_level:  riskLevel,
+        risk_score:  riskScore,
+        ...metrics,
+      },
     };
   } catch (error) {
     await client.query("ROLLBACK");
@@ -273,6 +253,4 @@ const createSample = async (payload, sourceIp = null) => {
   }
 };
 
-module.exports = {
-  createSample,
-};
+module.exports = { createSample };

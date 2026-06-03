@@ -1,13 +1,20 @@
-const { createReport, getAllReports, getReportById, getMyReports, updateReportStatus } = require('../services/reports.service');
+const {
+  createReport,
+  getAllReports,
+  getReportById,
+  getMyReports,
+  updateReportStatus,
+} = require('../services/reports.service');
 const { ok, created, fail } = require('../utils/response');
 const { getIO } = require('../sockets/socket');
+const { emitMapReportNew, emitMapReportStatusUpdated } = require('../sockets/mapSocket');
 
 async function createReportHandler(req, res) {
   try {
     console.log('FILE:', req.file);      // ← agregá esta línea
     console.log('BODY:', req.body);
     const { incident_type, description, urgency_level, latitude, longitude, location_name } = req.body;
-    const user_id = req.user?.uid;
+    const user_id   = req.user?.uid;
     const photo_url = req.file?.path || null;
 
     if (!incident_type || !description || !urgency_level) {
@@ -17,12 +24,13 @@ async function createReportHandler(req, res) {
     const report = await createReport({
       user_id, incident_type, description,
       urgency_level, latitude, longitude,
-      location_name, photo_url
+      location_name, photo_url,
     });
 
-    // Emitir en tiempo real a todos los conectados
-    const io = getIO();
-    io.emit('new_report', report);
+    // Evento existente (sin cambios)
+    getIO().emit('new_report', report);
+    // Evento del mapa
+    emitMapReportNew(report);
 
     return created(res, report, 'Reporte creado correctamente');
   } catch (error) {
@@ -33,8 +41,7 @@ async function createReportHandler(req, res) {
 
 async function getAllReportsHandler(req, res) {
   try {
-    const reports = await getAllReports();
-    return ok(res, reports, 'Reportes obtenidos correctamente');
+    return ok(res, await getAllReports(), 'Reportes obtenidos correctamente');
   } catch (error) {
     console.error('Get reports error:', error.message);
     return fail(res, 500, 'Error al obtener reportes');
@@ -43,9 +50,7 @@ async function getAllReportsHandler(req, res) {
 
 async function getReportByIdHandler(req, res) {
   try {
-    const { id } = req.params;
-    const report = await getReportById(id);
-
+    const report = await getReportById(req.params.id);
     if (!report) return fail(res, 404, 'Reporte no encontrado');
 
     return ok(res, report, 'Reporte obtenido correctamente');
@@ -57,18 +62,15 @@ async function getReportByIdHandler(req, res) {
 
 async function getMyReportsHandler(req, res) {
   try {
-    const user_id = req.user?.uid;
-    const reports = await getMyReports(user_id);
-    return ok(res, reports, 'Tus reportes obtenidos correctamente');
+    return ok(res, await getMyReports(req.user?.uid), 'Tus reportes obtenidos correctamente');
   } catch (error) {
-    console.error('Get my reports error:', error.message);
     return fail(res, 500, 'Error al obtener tus reportes');
   }
 }
 
 async function updateStatusHandler(req, res) {
   try {
-    const { id } = req.params;
+    const { id }     = req.params;
     const { status } = req.body;
 
     const validStatuses = ['pendiente', 'en_revision', 'atendido', 'descartado'];
@@ -79,9 +81,10 @@ async function updateStatusHandler(req, res) {
     const report = await updateReportStatus(id, status);
     if (!report) return fail(res, 404, 'Reporte no encontrado');
 
-    // Emitir cambio de estado en tiempo real
-    const io = getIO();
-    io.emit('report_status_updated', report);
+    // Evento existente (sin cambios)
+    getIO().emit('report_status_updated', report);
+    // Evento del mapa — incluye status 'descartado' para que el frontend lo filtre
+    emitMapReportStatusUpdated(report);
 
     return ok(res, report, 'Estado actualizado correctamente');
   } catch (error) {
