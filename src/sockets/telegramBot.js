@@ -1,18 +1,3 @@
-/**
- * telegramBot.js
- *
- * Bot de Telegram con login conversacional.
- * Flujo:
- *   /start  → pide email
- *   (email) → pide contraseña
- *   (pass)  → verifica contra BD con bcrypt, vincula chat_id si es admin activo
- *   /estado → muestra si ya está vinculado
- *   /salir  → desvincula la cuenta
- *
- * No usa ninguna librería extra de Telegram — solo fetch nativo (Node 18+).
- * Se inicia desde server.js junto con el resto del servidor.
- */
-
 const bcrypt = require('bcryptjs');
 const { pool } = require('../config/db');
 
