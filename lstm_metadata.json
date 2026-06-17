@@ -1,0 +1,41 @@
+{
+  "window_size": 30,
+  "horizon": 120,
+  "features": [
+    "soil_percent",
+    "rain_percent",
+    "vibration_detected",
+    "vibration_count",
+    "accel_magnitude",
+    "gyro_magnitude",
+    "accel_x",
+    "accel_y",
+    "accel_z"
+  ],
+  "n_features": 9,
+  "auc_test": 0.3658,
+  "f1_test": 0.665,
+  "scaler_mean": [
+    49.56348134443878,
+    0.0,
+    0.06939048206393257,
+    0.15802240723609826,
+    1.0259245348959833,
+    7.825278877582494,
+    -0.18334198787130748,
+    -0.118180727721245,
+    -0.6846751670265239
+  ],
+  "scaler_scale": [
+    19.254672514443303,
+    1.0,
+    0.2541169869625672,
+    0.7936986096122061,
+    0.20810148959472075,
+    25.98536369060248,
+    0.4662846523210287,
+    0.3684461872237165,
+    0.47386182449225667
+  ],
+  "descripcion": "LSTM que predice si habrá riesgo alto en las próximas 120 lecturas (60s) usando una ventana de 30 lecturas anteriores (15s)"
+}

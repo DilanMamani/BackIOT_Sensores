@@ -18,6 +18,7 @@ const reportsRouter = require('./routes/reports.routes');
 const mapRoutes = require('./routes/map.routes');
 const riskHistoryRoutes = require("./routes/riskHistory.routes");
 const telegramRoutes = require('./routes/telegram.routes');
+const lstmRoutes = require('./routes/lstm.routes');
 
 const app = express();
 
@@ -51,6 +52,7 @@ app.use('/api/reports', reportsRouter);
 app.use('/api/map', mapRoutes);
 app.use("/api/risk-history", riskHistoryRoutes);
 app.use('/api/telegram', telegramRoutes);
+app.use('/api/lstm', lstmRoutes);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
