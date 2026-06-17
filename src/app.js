@@ -18,9 +18,7 @@ const reportsRouter = require('./routes/reports.routes');
 const mapRoutes = require('./routes/map.routes');
 const riskHistoryRoutes = require("./routes/riskHistory.routes");
 const telegramRoutes = require('./routes/telegram.routes');
-const thresholdsRoutes = require("./routes/thresholds.routes");
-const metricTypesRoutes = require("./routes/metricTypes.routes");
-
+const chatBotRoutes= require('./routes/chatbot');
 const app = express();
 
 const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:5173")
@@ -57,8 +55,7 @@ app.use('/api/reports', reportsRouter);
 app.use('/api/map', mapRoutes);
 app.use("/api/risk-history", riskHistoryRoutes);
 app.use('/api/telegram', telegramRoutes);
-app.use("/api/thresholds", thresholdsRoutes);
-app.use("/api/metric-types", metricTypesRoutes);
+app.use('/api/chatbot', chatBotRoutes);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
