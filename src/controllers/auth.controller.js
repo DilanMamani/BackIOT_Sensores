@@ -10,7 +10,7 @@ async function login(req, res) {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return fail(res, "Email y contraseña son obligatorios", 400);
+      return fail(res, 400, "Email y contraseña son obligatorios");
     }
 
     const data = await loginUser({ email, password });
@@ -18,7 +18,7 @@ async function login(req, res) {
     return ok(res, data, "Login correcto");
   } catch (error) {
     console.error("Login error:", error.message);
-    return fail(res, error.message || "Error en login", 401);
+    return fail(res, 401, error.message || "Error en login");
   }
 }
 
@@ -29,8 +29,8 @@ async function register(req, res) {
     if (!full_name || !email || !password) {
       return fail(
         res,
-        "Nombre completo, email y contraseña son obligatorios",
-        400
+        400,
+        "Nombre completo, email y contraseña son obligatorios"
       );
     }
 
@@ -44,7 +44,7 @@ async function register(req, res) {
     return created(res, data, "Usuario registrado correctamente");
   } catch (error) {
     console.error("Register error:", error.message);
-    return fail(res, error.message || "Error al registrar usuario", 400);
+    return fail(res, 400, error.message || "Error al registrar usuario");
   }
 }
 
@@ -53,19 +53,19 @@ async function me(req, res) {
     const userId = req.user?.uid;
 
     if (!userId) {
-      return fail(res, "No autenticado", 401);
+      return fail(res, 401, "No autenticado");
     }
 
     const user = await getUserById(userId);
 
     if (!user) {
-      return fail(res, "Usuario no encontrado", 404);
+      return fail(res, 404, "Usuario no encontrado");
     }
 
     return ok(res, user, "Usuario autenticado");
   } catch (error) {
     console.error("Me error:", error.message);
-    return fail(res, "Error al obtener usuario", 500);
+    return fail(res, 500, "Error al obtener usuario");
   }
 }
 

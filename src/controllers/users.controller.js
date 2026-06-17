@@ -7,7 +7,7 @@ async function listUsers(req, res) {
     return ok(res, users, "Usuarios obtenidos correctamente");
   } catch (error) {
     console.error("List users error:", error.message);
-    return fail(res, "Error al obtener usuarios", 500);
+    return fail(res, 500, "Error al obtener usuarios");
   }
 }
 
