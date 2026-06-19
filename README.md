@@ -18,39 +18,22 @@ Backend del sistema **SlideWatch**, una solución de alerta temprana de deslizam
 BackIOT_Sensores/
 
 ├── src/
-
 │   ├── app.js                  # Configuración de Express y montaje de rutas
-
 │   ├── server.js                # Arranque del servidor HTTP + Socket.IO + bot Telegram
-
 │   ├── config/                  # Conexión a DB (Neon) y Cloudinary
-
 │   ├── constants/                # Mapeo de métricas a sensores físicos
-
 │   ├── controllers/              # Lógica de cada endpoint
-
 │   ├── middlewares/               # Auth, validación de payloads, manejo de errores
-
 │   ├── routes/                    # Definición de rutas por módulo
-
 │   ├── services/                  # Lógica de negocio y acceso a datos
-
 │   ├── sockets/                    # Socket.IO y bot de Telegram
-
 │   ├── utils/                       # Helpers (JWT, respuestas, rangos de tiempo)
-
 │   └── validators/                   # Validación de inputs
-
 ├── predict_service.py            # Microservicio Flask con el modelo LSTM
-
 ├── lstm_riesgo_deslizamiento.keras / .h5 / lstm_weights.weights.h5
-
 ├── lstm_metadata.json             # Metadata del modelo (features, ventana, scaler)
-
 ├── scaler_lstm.pkl                # Scaler usado para normalizar las lecturas
-
 ├── package.json
-
 └── .gitignore
 
 ## Requisitos previos
